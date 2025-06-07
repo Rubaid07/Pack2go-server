@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors')
 const app = express();
 const port = process.env.PORT || 3000;
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 require('dotenv').config();
 
 app.use(cors()) ;
@@ -39,6 +39,12 @@ async function run() {
     app.get('/packages/featured', async(req, res) => {
       const featured = await packageCollection.find().sort({ deadline: -1 }).limit(6).toArray();
       res.send(featured);
+    });
+
+    app.get('/packages/:id', async (req, res) => {
+      const id = req.params.id;
+      const result = await packageCollection.findOne({ _id: new ObjectId(id) });
+      res.send(result);
     });
     // await client.db("admin").command({ ping: 1 });
     // console.log("Pinged your deployment. You successfully connected to MongoDB!");
