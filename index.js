@@ -31,6 +31,10 @@ async function run() {
       res.send(result);
     });
     
+    app.get('/api/packages', async (req, res) => {
+      const packages = await packageCollection.find().toArray();
+      res.send(packages);
+    });
     // await client.db("admin").command({ ping: 1 });
     // console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } finally {
