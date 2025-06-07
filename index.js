@@ -31,9 +31,14 @@ async function run() {
       res.send(result);
     });
     
-    app.get('/api/packages', async (req, res) => {
+    app.get('/packages', async(req, res) => {
       const packages = await packageCollection.find().toArray();
       res.send(packages);
+    });
+
+    app.get('/packages/featured', async(req, res) => {
+      const featured = await packageCollection.find().sort({ deadline: -1 }).limit(6).toArray();
+      res.send(featured);
     });
     // await client.db("admin").command({ ping: 1 });
     // console.log("Pinged your deployment. You successfully connected to MongoDB!");
