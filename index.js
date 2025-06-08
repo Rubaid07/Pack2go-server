@@ -79,6 +79,16 @@ async function run() {
       res.send(myPackages);
     });
 
+    app.put('/packages/:id', async (req, res) => {
+      const updated = req.body;
+      const result = await db.collection('tourPackages').updateOne(
+        { _id: new ObjectId(req.params.id) },
+        { $set: updated }
+      );
+      res.send(result);
+    });
+
+
   } finally {
 
   }
