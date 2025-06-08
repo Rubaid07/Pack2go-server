@@ -88,6 +88,11 @@ async function run() {
       res.send(result);
     });
 
+    app.delete('/packages/:id', async (req, res) => {
+      const result = await db.collection('tourPackages').deleteOne({ _id: new ObjectId(req.params.id) });
+      res.send(result);
+    });
+
 
   } finally {
 
