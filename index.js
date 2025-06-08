@@ -64,6 +64,20 @@ async function run() {
       res.send(bookings);
     });
 
+    app.patch('/bookings/:id', async (req, res) => {
+      const id = req.params.id;
+      const result = await db.collection('bookings').updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { status: "completed" } }
+      );
+      res.send(result);
+    });
+
+    app.get('/my-packages', async (req, res) => {
+      const email = req.query.email;
+      const myPackages = await db.collection('tourPackages').find({ guide_email: email }).toArray();
+      res.send(myPackages);
+    });
 
   } finally {
 
