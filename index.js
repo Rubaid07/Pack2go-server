@@ -5,7 +5,7 @@ const port = process.env.PORT || 3000;
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 require('dotenv').config();
 
-app.use(cors()) ;
+app.use(cors());
 app.use(express.json())
 
 
@@ -30,14 +30,14 @@ async function run() {
       const result = await packageCollection.insertOne(newPackage);
       res.send(result);
     });
-    
-    app.get('/packages', async(req, res) => {
+
+    app.get('/packages', async (req, res) => {
       const packages = await packageCollection.find().toArray();
       res.send(packages);
     });
 
-    app.get('/packages/featured', async(req, res) => {
-      const featured = await packageCollection.find().sort({ deadline: -1 }).limit(6).toArray();
+    app.get('/packages/featured', async (req, res) => {
+      const featured = await packageCollection.find().sort({ created_at: -1 }).limit(6).toArray();
       res.send(featured);
     });
 
@@ -46,8 +46,18 @@ async function run() {
       const result = await packageCollection.findOne({ _id: new ObjectId(id) });
       res.send(result);
     });
-    // await client.db("admin").command({ ping: 1 });
-    // console.log("Pinged your deployment. You successfully connected to MongoDB!");
+
+    app.post('/bookings', async (req, res) => {
+      const booking = req.body;
+      const result = await db.collection('bookings').insertOne(booking);
+
+      await db.collection('tourPackages').updateOne(
+        { _id: new ObjectId(booking.tour_id) },
+        { $inc: { bookingCount: 1 } }
+      );
+      res.send(result);
+    });
+
   } finally {
 
   }
@@ -56,8 +66,8 @@ run().catch(console.dir);
 
 
 app.get('/', (req, res) => {
-    res.send('Pack2Go is cooking')
+  res.send('Pack2Go is cooking')
 })
-app.listen(port, ()=> {
-    console.log(`Pack2Go server is running on port ${port}`);
+app.listen(port, () => {
+  console.log(`Pack2Go server is running on port ${port}`);
 })
