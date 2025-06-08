@@ -58,6 +58,13 @@ async function run() {
       res.send(result);
     });
 
+    app.get('/bookings', async (req, res) => {
+      const email = req.query.email;
+      const bookings = await db.collection('bookings').find({ buyer_email: email }).toArray();
+      res.send(bookings);
+    });
+
+
   } finally {
 
   }
