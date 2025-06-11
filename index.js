@@ -22,13 +22,13 @@ app.use(express.json())
 const verifyToken = async (req, res, next) => {
   const authorizationHeader = req?.headers?.authorization;
   if (!authorizationHeader) {
-    return res.status(401).send({ message: 'Unauthorized Access: No token provided!' });
+    return res.status(401).send({ message: 'Unauthorized Access' });
   }
 
   const token = authorizationHeader.split(' ')[1];
 
   if (!token) {
-    return res.status(401).send({ message: 'Unauthorized Access: Invalid token format!' });
+    return res.status(401).send({ message: 'Unauthorized Access' });
   }
 
   try {
@@ -37,7 +37,7 @@ const verifyToken = async (req, res, next) => {
     next();
   } catch (err) {
     console.error("Error verifying Firebase ID token:", err);
-    return res.status(403).send({ message: 'Forbidden Access: Invalid or expired token!' });
+    return res.status(403).send({ message: 'Forbidden Access' });
   }
 };
 
@@ -62,7 +62,7 @@ async function run() {
     app.post('/packages', verifyToken, async (req, res) => {
       const newPackage = req.body;
       if (req.decodedEmail !== newPackage.guide_email) {
-        return res.status(403).send({ message: 'Forbidden Access: Email mismatch!' });
+        return res.status(403).send({ message: 'Forbidden Access' });
       }
       const result = await packageCollection.insertOne(newPackage);
       res.send(result);
@@ -87,7 +87,7 @@ async function run() {
     app.post('/bookings', verifyToken, async (req, res) => {
       const booking = req.body;
       if (req.decodedEmail !== booking.buyer_email) {
-        return res.status(403).send({ message: 'Forbidden Access: Email mismatch!' });
+        return res.status(403).send({ message: 'Forbidden Access' });
       }
       const result = await bookingCollection.insertOne(booking); 
 
@@ -102,7 +102,7 @@ async function run() {
       const email = req.query.email;
       const tokenEmail = req.decodedEmail; 
       if (email !== tokenEmail) {
-        return res.status(403).send({ message: 'Forbidden Access: Email mismatch!' });
+        return res.status(403).send({ message: 'Forbidden Access' });
       }
       const bookings = await bookingCollection.find({ buyer_email: email }).toArray();
       res.send(bookings);
@@ -112,7 +112,7 @@ async function run() {
       const id = req.params.id;
       const bookingToUpdate = await bookingCollection.findOne({ _id: new ObjectId(id) });
       if (!bookingToUpdate || bookingToUpdate.guide_email !== req.decodedEmail) {
-        return res.status(403).send({ message: 'Forbidden Access: Not authorized to confirm this booking!' });
+        return res.status(403).send({ message: 'Forbidden Access' });
       }
 
       const result = await bookingCollection.updateOne(
@@ -126,7 +126,7 @@ async function run() {
       const email = req.query.email;
       const tokenEmail = req.decodedEmail; 
       if (email !== tokenEmail) {
-        return res.status(403).send({ message: 'Forbidden Access: Email mismatch!' });
+        return res.status(403).send({ message: 'Forbidden Access' });
       }
       const myPackages = await packageCollection.find({ guide_email: email }).toArray();
       res.send(myPackages);
@@ -137,7 +137,7 @@ async function run() {
       const updated = req.body;
       const existingPackage = await packageCollection.findOne({ _id: new ObjectId(id) });
       if (!existingPackage || existingPackage.guide_email !== req.decodedEmail) {
-        return res.status(403).send({ message: 'Forbidden Access: Not authorized to update this package!' });
+        return res.status(403).send({ message: 'Forbidden Access' });
       }
       const result = await packageCollection.updateOne(
         { _id: new ObjectId(id) },
@@ -150,7 +150,7 @@ async function run() {
       const id = req.params.id;
       const existingPackage = await packageCollection.findOne({ _id: new ObjectId(id) });
       if (!existingPackage || existingPackage.guide_email !== req.decodedEmail) {
-        return res.status(403).send({ message: 'Forbidden Access: Not authorized to delete this package!' });
+        return res.status(403).send({ message: 'Forbidden Access' });
       }
       const result = await packageCollection.deleteOne({ _id: new ObjectId(id) });
       res.send(result);
