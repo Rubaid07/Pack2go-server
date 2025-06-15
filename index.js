@@ -109,7 +109,7 @@ async function run() {
       const id = req.params.id;
       const bookingToUpdate = await bookingCollection.findOne({ _id: new ObjectId(id) });
 
-      if (!bookingToUpdate || bookingToUpdate.guide_email !== req.decodedEmail) {
+      if (!bookingToUpdate || bookingToUpdate.buyer_email !== req.decodedEmail) {
         return res.status(403).send({ message: 'Forbidden Access' });
       }
 
@@ -120,12 +120,11 @@ async function run() {
       res.send(result);
     });
 
-    app.get('/guide-bookings', verifyToken, async (req, res) => {
-      const guideEmail = req.decodedEmail;
-      const result = await bookingCollection.find({ guide_email: guideEmail }).toArray();
-      res.send(result);
-    });
-
+    // app.get('/guide-bookings', verifyToken, async (req, res) => {
+    //   const guideEmail = req.decodedEmail;
+    //   const result = await bookingCollection.find({ guide_email: guideEmail }).toArray();
+    //   res.send(result);
+    // });
 
     app.get('/my-packages', verifyToken, async (req, res) => {
       const email = req.query.email;
