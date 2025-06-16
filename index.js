@@ -4,8 +4,10 @@ const cors = require('cors')
 const app = express();
 const port = process.env.PORT || 3000;
 var admin = require("firebase-admin");
-var serviceAccount = require("./serviceAccountKey.json");
 
+const decoded = Buffer.from(process.env.FB_SERVICE_KEY, 'base64').toString('utf8')
+
+var serviceAccount = JSON.parse(decoded);
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
 });
@@ -37,8 +39,6 @@ const verifyToken = async (req, res, next) => {
   }
 };
 
-
-
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.ynxyt70.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
 
@@ -65,6 +65,7 @@ async function run() {
       res.send(result);
     });
 
+    // 👇
     app.get('/packages', async (req, res) => {
       const packages = await packageCollection.find().toArray();
       res.send(packages);
@@ -74,6 +75,7 @@ async function run() {
       const featured = await packageCollection.find().sort({ created_at: -1 }).limit(6).toArray();
       res.send(featured);
     });
+    //👆
 
     app.get('/packages/:id', async (req, res) => {
       const id = req.params.id;
