@@ -1,12 +1,15 @@
 require('dotenv').config();
 const express = require('express');
-const cors = require('cors')
+const cors = require('cors');
 const app = express();
 const port = process.env.PORT || 3000;
+
+
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+
 var admin = require("firebase-admin");
 
 const decoded = Buffer.from(process.env.FB_SERVICE_KEY, 'base64').toString('utf8')
-
 var serviceAccount = JSON.parse(decoded);
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
@@ -14,21 +17,18 @@ admin.initializeApp({
 
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
+// CORS setup
 app.use(cors({
   origin: ['http://localhost:5173', 'https://pack2go07.web.app'],
   credentials: true,
-})
-)
-app.use(express.json())
-
+}));
+app.use(express.json());
 
 const verifyToken = async (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
-
   if (!token) {
     return res.status(401).send({ message: "Unauthorized Access" });
   }
-
   try {
     const decoded = await admin.auth().verifyIdToken(token);
     req.decodedEmail = decoded.email;
@@ -49,12 +49,102 @@ const client = new MongoClient(uri, {
     deprecationErrors: true,
   }
 });
-
 async function run() {
   try {
+    await client.connect();
     const db = client.db("pack2goDB");
     const packageCollection = db.collection("tourPackages");
     const bookingCollection = db.collection("bookings");
+
+     app.post('/create-payment-intent', verifyToken, async (req, res) => {
+      try {
+        console.log('🎯 Creating payment intent...');
+        const { price } = req.body;
+        
+        if (!price || price <= 0) {
+          return res.status(400).send({ message: 'Invalid price amount' });
+        }
+        
+        const amount = Math.round(price * 100);
+        
+        console.log(' Amount:', amount, 'BDT');
+
+        const paymentIntent = await stripe.paymentIntents.create({
+          amount: amount,
+          currency: 'bdt',
+          automatic_payment_methods: {
+            enabled: true,
+          },
+          metadata: {
+            user_email: req.decodedEmail,
+            service: 'tour-booking'
+          }
+        });
+
+        console.log(' Payment intent created:', paymentIntent.id);
+
+        res.send({
+          clientSecret: paymentIntent.client_secret,
+          paymentIntentId: paymentIntent.id
+        });
+        
+      } catch (error) {
+        console.error(' Stripe payment intent error:', error);
+        res.status(500).send({ 
+          message: 'Payment processing failed',
+          error: error.message 
+        });
+      }
+    });
+
+    // PAYMENT CONFIRMATION
+    app.post('/confirm-payment', verifyToken, async (req, res) => {
+      try {
+        const { paymentIntentId, bookingData } = req.body;
+        
+        console.log(' Confirming payment:', paymentIntentId);
+
+        const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+        
+        if (paymentIntent.status !== 'succeeded') {
+          return res.status(400).send({ 
+            message: 'Payment not successful',
+            status: paymentIntent.status 
+          });
+        }
+
+        const completeBookingData = {
+          ...bookingData,
+          payment_status: 'paid',
+          payment_intent_id: paymentIntentId,
+          payment_date: new Date(),
+          transaction_amount: paymentIntent.amount / 100,
+          status: 'confirmed'
+        };
+
+        const result = await bookingCollection.insertOne(completeBookingData);
+
+        await packageCollection.updateOne(
+          { _id: new ObjectId(bookingData.tour_id) },
+          { $inc: { bookingCount: 1 } }
+        );
+
+        console.log(' Booking confirmed with ID:', result.insertedId);
+
+        res.send({
+          success: true,
+          bookingId: result.insertedId,
+          paymentStatus: 'succeeded'
+        });
+        
+      } catch (error) {
+        console.error(' Payment confirmation error:', error);
+        res.status(500).send({ 
+          message: 'Payment confirmation failed',
+          error: error.message 
+        });
+      }
+    });
 
     app.post('/packages', verifyToken, async (req, res) => {
       const newPackage = req.body;
@@ -65,7 +155,6 @@ async function run() {
       res.send(result);
     });
 
-    // 👇
     app.get('/packages', async (req, res) => {
       const packages = await packageCollection.find().toArray();
       res.send(packages);
@@ -75,7 +164,6 @@ async function run() {
       const featured = await packageCollection.find().sort({ created_at: -1 }).limit(6).toArray();
       res.send(featured);
     });
-    //👆
 
     app.get('/packages/:id', async (req, res) => {
       const id = req.params.id;
@@ -161,7 +249,6 @@ async function run() {
       res.send(result);
     });
 
-
   } finally {
 
   }
@@ -174,4 +261,5 @@ app.get('/', (req, res) => {
 })
 app.listen(port, () => {
   console.log(`Pack2Go server is running on port ${port}`);
+  console.log('Stripe integration is enabled');
 })
