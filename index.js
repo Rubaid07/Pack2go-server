@@ -55,51 +55,296 @@ async function run() {
     const db = client.db("pack2goDB");
     const packageCollection = db.collection("tourPackages");
     const bookingCollection = db.collection("bookings");
+    const spinHistoryCollection = db.collection("spinHistory");
+
+    //spin
+// Check spin eligibility
+app.post('/discounts/validate', verifyToken, async (req, res) => {
+    try {
+        const { discountCode, packageId } = req.body;
+        const userEmail = req.decodedEmail;
+
+        // Find the discount
+        const discount = await spinHistoryCollection.findOne({
+            discount_code: discountCode,
+            user_email: userEmail
+        });
+
+        if (!discount) {
+            return res.send({
+                valid: false,
+                message: 'Discount code not found'
+            });
+        }
+
+        // Check if already used
+        if (discount.used) {
+            return res.send({
+                valid: false,
+                message: 'Discount code already used'
+            });
+        }
+
+        // Check validity
+        if (new Date(discount.valid_until) < new Date()) {
+            return res.send({
+                valid: false,
+                message: 'Discount code has expired'
+            });
+        }
+
+        // Check if package exists
+        const package = await packageCollection.findOne({ 
+            _id: new ObjectId(packageId) 
+        });
+
+        if (!package) {
+            return res.send({
+                valid: false,
+                message: 'Package not found'
+            });
+        }
+
+        res.send({
+            valid: true,
+            discount: {
+                discount_code: discount.discount_code,
+                discount: discount.discount,
+                valid_until: discount.valid_until
+            }
+        });
+
+    } catch (error) {
+        console.error('Discount validation error:', error);
+        res.status(500).send({ message: 'Error validating discount' });
+    }
+});
+
+// Mark discount as used
+app.patch('/discounts/use/:code', verifyToken, async (req, res) => {
+    try {
+        const { code } = req.params;
+        const userEmail = req.decodedEmail;
+
+        const result = await spinHistoryCollection.updateOne(
+            {
+                discount_code: code,
+                user_email: userEmail
+            },
+            {
+                $set: {
+                    used: true,
+                    used_at: new Date()
+                }
+            }
+        );
+
+        if (result.modifiedCount === 0) {
+            return res.status(404).send({ message: 'Discount not found' });
+        }
+
+        res.send({ success: true, message: 'Discount marked as used' });
+
+    } catch (error) {
+        console.error('Discount use error:', error);
+        res.status(500).send({ message: 'Error updating discount' });
+    }
+});
+
+
+
+    app.get('/spin/eligibility', verifyToken, async (req, res) => {
+    try {
+        const userEmail = req.decodedEmail;
+        
+        // Find user's last spin
+        const lastSpin = await spinHistoryCollection
+            .find({ user_email: userEmail })
+            .sort({ spin_date: -1 })
+            .limit(1)
+            .toArray();
+
+        if (lastSpin.length === 0) {
+            return res.send({ 
+                eligible: true,
+                timeLeft: null,
+                lastSpin: null
+            });
+        }
+
+        const lastSpinTime = new Date(lastSpin[0].spin_date);
+        const now = new Date();
+        const timeDiff = now - lastSpinTime;
+        const hoursDiff = timeDiff / (1000 * 60 * 60);
+        
+        // 2 days = 48 hours
+        if (hoursDiff >= 48) {
+            return res.send({ 
+                eligible: true,
+                timeLeft: null,
+                lastSpin: lastSpin[0]
+            });
+        } else {
+            const hoursLeft = 48 - hoursDiff;
+            return res.send({ 
+                eligible: false,
+                timeLeft: `${Math.ceil(hoursLeft)} hours`,
+                lastSpin: lastSpin[0]
+            });
+        }
+    } catch (error) {
+        console.error('Spin eligibility error:', error);
+        res.status(500).send({ message: 'Error checking spin eligibility' });
+    }
+});
+
+// Spin the wheel
+app.post('/spin', verifyToken, async (req, res) => {
+    try {
+        const userEmail = req.decodedEmail;
+        
+        // Check eligibility again (security)
+        const lastSpin = await spinHistoryCollection
+            .find({ user_email: userEmail })
+            .sort({ spin_date: -1 })
+            .limit(1)
+            .toArray();
+
+        if (lastSpin.length > 0) {
+            const lastSpinTime = new Date(lastSpin[0].spin_date);
+            const now = new Date();
+            const timeDiff = now - lastSpinTime;
+            const hoursDiff = timeDiff / (1000 * 60 * 60);
+            
+            if (hoursDiff < 48) {
+                return res.status(400).send({ 
+                    message: `You can spin again in ${Math.ceil(48 - hoursDiff)} hours` 
+                });
+            }
+        }
+
+        // Discount options with probabilities
+        const discountOptions = [
+            { discount: 5, probability: 30 },
+            { discount: 10, probability: 25 },
+            { discount: 15, probability: 20 },
+            { discount: 20, probability: 15 },
+            { discount: 25, probability: 7 },
+            { discount: 50, probability: 3 },
+        ];
+
+        // Calculate random discount
+        const random = Math.random() * 100;
+        let cumulativeProbability = 0;
+        let selectedDiscount = discountOptions[0];
+
+        for (const option of discountOptions) {
+            cumulativeProbability += option.probability;
+            if (random <= cumulativeProbability) {
+                selectedDiscount = option;
+                break;
+            }
+        }
+
+        // Generate unique discount code
+        const discountCode = `SPIN${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+        
+        // Calculate validity (7 days from now)
+        const validUntil = new Date();
+        validUntil.setDate(validUntil.getDate() + 7);
+
+        // Save spin history
+        const spinData = {
+            user_email: userEmail,
+            discount: selectedDiscount.discount,
+            discount_code: discountCode,
+            valid_until: validUntil,
+            spin_date: new Date(),
+            used: false
+        };
+
+        const result = await spinHistoryCollection.insertOne(spinData);
+
+        res.send({
+            success: true,
+            discount: selectedDiscount.discount,
+            discountCode: discountCode,
+            validUntil: validUntil,
+            spinId: result.insertedId
+        });
+
+    } catch (error) {
+        console.error('Spin error:', error);
+        res.status(500).send({ message: 'Spin failed' });
+    }
+});
+
+// Get user's spin history
+app.get('/spin/history', verifyToken, async (req, res) => {
+    try {
+        const userEmail = req.decodedEmail;
+        
+        const spinHistory = await spinHistoryCollection
+            .find({ user_email: userEmail })
+            .sort({ spin_date: -1 })
+            .toArray();
+
+        res.send(spinHistory);
+    } catch (error) {
+        console.error('Spin history error:', error);
+        res.status(500).send({ message: 'Error fetching spin history' });
+    }
+});
+    // spin end
 
      app.post('/create-payment-intent', verifyToken, async (req, res) => {
-      try {
-        console.log('🎯 Creating payment intent...');
-        const { price } = req.body;
+    try {
+        console.log(' Creating payment intent...');
+        const { price, discountCode } = req.body;
         
         if (!price || price <= 0) {
-          return res.status(400).send({ message: 'Invalid price amount' });
+            return res.status(400).send({ message: 'Invalid price amount' });
         }
         
         const amount = Math.round(price * 100);
         
         console.log(' Amount:', amount, 'BDT');
+        if (discountCode) {
+            console.log(' Discount applied:', discountCode);
+        }
 
         const paymentIntent = await stripe.paymentIntents.create({
-          amount: amount,
-          currency: 'bdt',
-          automatic_payment_methods: {
-            enabled: true,
-          },
-          metadata: {
-            user_email: req.decodedEmail,
-            service: 'tour-booking'
-          }
+            amount: amount,
+            currency: 'bdt',
+            automatic_payment_methods: {
+                enabled: true,
+            },
+            metadata: {
+                user_email: req.decodedEmail,
+                service: 'tour-booking',
+                discount_code: discountCode || 'none'
+            }
         });
 
         console.log(' Payment intent created:', paymentIntent.id);
 
         res.send({
-          clientSecret: paymentIntent.client_secret,
-          paymentIntentId: paymentIntent.id
+            clientSecret: paymentIntent.client_secret,
+            paymentIntentId: paymentIntent.id
         });
         
-      } catch (error) {
-        console.error(' Stripe payment intent error:', error);
+    } catch (error) {
+        console.error('❌ Stripe payment intent error:', error);
         res.status(500).send({ 
-          message: 'Payment processing failed',
-          error: error.message 
+            message: 'Payment processing failed',
+            error: error.message 
         });
-      }
-    });
+    }
+});
 
     // PAYMENT CONFIRMATION
-    app.post('/confirm-payment', verifyToken, async (req, res) => {
-      try {
+   app.post('/confirm-payment', verifyToken, async (req, res) => {
+    try {
         const { paymentIntentId, bookingData } = req.body;
         
         console.log(' Confirming payment:', paymentIntentId);
@@ -107,44 +352,64 @@ async function run() {
         const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
         
         if (paymentIntent.status !== 'succeeded') {
-          return res.status(400).send({ 
-            message: 'Payment not successful',
-            status: paymentIntent.status 
-          });
+            return res.status(400).send({ 
+                message: 'Payment not successful',
+                status: paymentIntent.status 
+            });
+        }
+
+        const package = await packageCollection.findOne({ 
+            _id: new ObjectId(bookingData.tour_id) 
+        });
+
+        if (!package) {
+            return res.status(404).send({ message: 'Package not found' });
+        }
+
+        if (package.available_seats < bookingData.seat_count) {
+            return res.status(400).send({ 
+                message: `Only ${package.available_seats} seats available` 
+            });
         }
 
         const completeBookingData = {
-          ...bookingData,
-          payment_status: 'paid',
-          payment_intent_id: paymentIntentId,
-          payment_date: new Date(),
-          transaction_amount: paymentIntent.amount / 100,
-          status: 'confirmed'
+            ...bookingData,
+            payment_status: 'paid',
+            payment_intent_id: paymentIntentId,
+            payment_date: new Date(),
+            transaction_amount: paymentIntent.amount / 100,
+            status: 'confirmed'
         };
 
         const result = await bookingCollection.insertOne(completeBookingData);
 
         await packageCollection.updateOne(
-          { _id: new ObjectId(bookingData.tour_id) },
-          { $inc: { bookingCount: 1 } }
+            { _id: new ObjectId(bookingData.tour_id) },
+            { 
+                $inc: { 
+                    bookingCount: 1,
+                    available_seats: -bookingData.seat_count 
+                } 
+            }
         );
 
-        console.log(' Booking confirmed with ID:', result.insertedId);
+        console.log('Booking confirmed with ID:', result.insertedId);
+        console.log(`Available seats updated: ${package.available_seats} → ${package.available_seats - bookingData.seat_count}`);
 
         res.send({
-          success: true,
-          bookingId: result.insertedId,
-          paymentStatus: 'succeeded'
+            success: true,
+            bookingId: result.insertedId,
+            paymentStatus: 'succeeded'
         });
         
-      } catch (error) {
+    } catch (error) {
         console.error(' Payment confirmation error:', error);
         res.status(500).send({ 
-          message: 'Payment confirmation failed',
-          error: error.message 
+            message: 'Payment confirmation failed',
+            error: error.message 
         });
-      }
-    });
+    }
+});
 
     app.post('/packages', verifyToken, async (req, res) => {
       const newPackage = req.body;
